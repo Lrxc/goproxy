@@ -11,12 +11,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
 	"math/big"
 	"math/rand"
 	"net"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,6 +31,17 @@ func hashSorted(lst []string) []byte {
 	h := sha256.New()
 	h.Write([]byte(strings.Join(c, ",")))
 	return h.Sum(nil)
+}
+
+var cachedKey *rsa.PrivateKey
+var keyOnce sync.Once
+
+func GetKey(random io.Reader, bits int) (*rsa.PrivateKey, error) {
+	var err error
+	keyOnce.Do(func() {
+		cachedKey, err = rsa.GenerateKey(random, bits)
+	})
+	return cachedKey, err
 }
 
 func SignHost(ca tls.Certificate, hosts []string) (cert *tls.Certificate, err error) {
@@ -81,7 +94,8 @@ func SignHost(ca tls.Certificate, hosts []string) (cert *tls.Certificate, err er
 	var certpriv crypto.Signer
 	switch ca.PrivateKey.(type) {
 	case *rsa.PrivateKey:
-		if certpriv, err = rsa.GenerateKey(&csprng, 2048); err != nil {
+		//if certpriv, err = rsa.GenerateKey(&csprng, 2048); err != nil {
+		if certpriv, err = GetKey(&csprng, 2048); err != nil {
 			return nil, err
 		}
 	case *ecdsa.PrivateKey:
